@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="Chronos Tunnel — An immersive 3D walk-through experience for the Natural History Museum. Journey through time in an infinite animated cylinder tunnel.">
+  <title>Chronos Tunnel — 3D Time Travel Experience</title>
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- Inline Error Logger for Debugging -->
+  <script>
+    window.addEventListener('error', function(e) {
+      var errDiv = document.getElementById('debug-error-box');
+      if (!errDiv) {
+        errDiv = document.createElement('div');
+        errDiv.id = 'debug-error-box';
+        errDiv.style.cssText = 'position:fixed;top:10px;left:10px;right:10px;background:rgba(255,0,0,0.85);color:white;padding:15px;z-index:99999;font-family:monospace;font-size:12px;border-radius:5px;max-height:200px;overflow-y:auto;line-height:1.4;';
+        document.body.appendChild(errDiv);
+      }
+      errDiv.innerHTML += '<div>ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno + '</div>';
+    });
+  </script>
+
+  <!-- Load local Three.js (No external CDN dependencies for 100% offline reliability) -->
+  <script src="three.min.js"></script>
+</head>
+<body>
+  <!-- Container for the Three.js 3D WebGL output -->
+  <div id="canvas-container"></div>
+
+  <!-- Tunnel Frame overlay -->
+  <div id="tunnel-overlay">
+    <div class="tunnel-vignette"></div>
+    <div class="tunnel-glow"></div>
+  </div>
+
+  <!-- Cinematic Subtitle Overlay -->
+  <div id="subtitle-bar">
+    <span id="subtitle-text"></span>
+  </div>
+
+  <!-- Navigation / Progress Indicator -->
+  <div id="timeline-container">
+    <div id="timeline-progress"></div>
+  </div>
+
+  <div id="era-dots"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
