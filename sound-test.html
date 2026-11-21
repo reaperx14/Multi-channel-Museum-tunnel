@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chronos Sound & SFX Test</title>
+  <style>
+    body { background: #0c0d14; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; margin: 0; padding: 20px; box-sizing: border-box; }
+    h2 { margin: 0 0 10px 0; color: #64ffb4; font-size: 26px; }
+    .btn-group { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 650px; }
+    button { background: #1a1d2e; color: #fff; border: 2px solid #333a56; border-radius: 12px; padding: 14px 24px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    button:hover { background: #262b45; border-color: #64ffb4; color: #64ffb4; transform: translateY(-2px); }
+    .volcano { border-color: #ff5500; }
+    .volcano:hover { border-color: #ff8833; color: #ffaa55; }
+    .dino { border-color: #33cc66; }
+    .dino:hover { border-color: #55ee88; color: #88ffaa; }
+    #status { font-size: 15px; color: #9aa5c4; text-align: center; max-width: 500px; min-height: 24px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h2>🔊 Chronos Sound Engine Test</h2>
+  <div class="btn-group">
+    <button onclick="testBeep()">🔊 Test 1: Web Audio Beep</button>
+    <button onclick="testVoice()">🗣️ Test 2: Calm Narration</button>
+    <button class="volcano" onclick="testVolcano()">🌋 Test 3: Volcano Eruption</button>
+    <button class="dino" onclick="testDinoRoar()">🦖 Test 4: Dinosaur Roar (T-Rex)</button>
+    <button class="dino" onclick="testBrachio()">🦕 Test 5: Brachiosaurus Call</button>
+  </div>
+  <div id="status">Click any button above to test directly</div>
+
+  <script>
+    var log = document.getElementById('status');
+    var ctx = null;
+
+    function getAudio() {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    }
+
+    function testBeep() {
+      var ac = getAudio();
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      gain.gain.value = 0.25;
+      osc.frequency.value = 440;
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.start();
+      osc.stop(ac.currentTime + 1.2);
+      log.textContent = '✅ Standard Web Audio beep playing!';
+    }
+
+    function testVoice() {
+      if (!window.speechSynthesis) {
+        log.textContent = '❌ Speech Synthesis unavailable.';
+        return;
+      }
+      window.speechSynthesis.cancel();
+      var utt = new SpeechSynthesisUtterance('A World of Fire. Four point six billion years ago. Meteors rain down from the sky as volcanoes erupt across a boiling landscape.');
+      utt.lang = 'en-US';
+      utt.rate = 0.80;
+      utt.pitch = 0.92;
+      window.speechSynthesis.speak(utt);
+      log.textContent = '🗣️ Calm narrator speaking...';
+    }
+
+    function makePinkBuf(ac) {
+      var sr = ac.sampleRate, len = sr * 3, buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0);
+      var b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for(var i=0;i<len;i++){
+        var w=Math.random()*2-1;
+        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+        b2=0.969*b2+w*0.153852; b3=0.8665*b3+w*0.3104856;
+        b4=0.55*b4+w*0.5329522; b5=-0.7616*b5-w*0.016898;
+        d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+      }
+      return buf;
+    }
+
+    function testVolcano() {
+      var ac = getAudio();
+      var now = ac.currentTime;
+
+      // 1. Shockwave blast
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(24, now + 1.4);
+      gain.gain.setValueAtTime(0.40, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
+
+      var flt = ac.createBiquadFilter();
+      flt.type = 'lowpass';
+      flt.frequency.setValueAtTime(220, now);
+      flt.frequency.exponentialRampToValueAtTime(55, now + 2.2);
+
+      osc.connect(flt); flt.connect(gain); gain.connect(ac.destination);
+      osc.start(now); osc.stop(now + 2.9);
+
+      // 2. Roaring gas and lava plume
+      var roar = ac.createBufferSource();
+      roar.buffer = makePinkBuf(ac);
+      var roarGain = ac.createGain();
+      var roarFlt = ac.createBiquadFilter();
+      roarFlt.type = 'bandpass';
+      roarFlt.Q.value = 1.4;
+      roarFlt.frequency.setValueAtTime(140, now);
+      roarFlt.frequency.linearRampToValueAtTime(680, now + 0.35);
+      roarFlt.frequency.exponentialRampToValueAtTime(110, now + 3.6);
+
+      roarGain.gain.setValueAtTime(0.01, now);
+      roarGain.gain.linearRampToValueAtTime(0.45, now + 0.22);
+      roarGain.gain.exponentialRampToValueAtTime(0.0005, now + 4.0);
+
+      roar.connect(roarFlt); roarFlt.connect(roarGain); roarGain.connect(ac.destination);
+      roar.start(now);
+
+      log.textContent = '🌋 Volcano Eruption sound playing! (Deep seismic blast + gas plume)';
+    }
+
+    function testDinoRoar() {
+      var ac = getAudio();
+      var now = ac.currentTime;
+
+      var osc1 = ac.createOscillator();
+      var osc2 = ac.createOscillator();
+      osc1.type = 'sawtooth'; osc2.type = 'sawtooth';
+
+      osc1.frequency.setValueAtTime(68, now);
+      osc1.frequency.linearRampToValueAtTime(210, now + 0.32);
+      osc1.frequency.exponentialRampToValueAtTime(145, now + 1.1);
+      osc1.frequency.exponentialRampToValueAtTime(42, now + 2.8);
+
+      osc2.frequency.setValueAtTime(71, now);
+      osc2.frequency.linearRampToValueAtTime(216, now + 0.32);
+      osc2.frequency.exponentialRampToValueAtTime(148, now + 1.1);
+      osc2.frequency.exponentialRampToValueAtTime(44, now + 2.8);
+
+      var trem = ac.createOscillator();
+      var tremGain = ac.createGain();
+      trem.frequency.setValueAtTime(24, now);
+      tremGain.gain.setValueAtTime(0.35, now);
+      trem.connect(tremGain);
+
+      var preAmp = ac.createGain();
+      preAmp.gain.setValueAtTime(0.40, now);
+      tremGain.connect(preAmp.gain);
+      trem.start(now); trem.stop(now + 2.9);
+
+      osc1.connect(preAmp); osc2.connect(preAmp);
+
+      var f1 = ac.createBiquadFilter(); f1.type = 'peaking'; f1.frequency.setValueAtTime(360, now); f1.Q.value = 4.0; f1.gain.value = 15;
+      var f2 = ac.createBiquadFilter(); f2.type = 'peaking'; f2.frequency.setValueAtTime(920, now); f2.Q.value = 3.5; f2.gain.value = 16;
+      var f3 = ac.createBiquadFilter(); f3.type = 'peaking'; f3.frequency.setValueAtTime(1750, now); f3.Q.value = 2.5; f3.gain.value = 11;
+      var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(2800, now); lp.frequency.exponentialRampToValueAtTime(550, now + 2.8);
+
+      preAmp.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(lp);
+
+      var mainGain = ac.createGain();
+      mainGain.gain.setValueAtTime(0.01, now);
+      mainGain.gain.linearRampToValueAtTime(0.48, now + 0.28);
+      mainGain.gain.setValueAtTime(0.42, now + 0.9);
+      mainGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.9);
+
+      lp.connect(mainGain); mainGain.connect(ac.destination);
+      osc1.start(now); osc2.start(now);
+      osc1.stop(now + 2.95); osc2.stop(now + 2.95);
+
+      // Breath turbulence
+      var breath = ac.createBufferSource();
+      breath.buffer = makePinkBuf(ac);
+      var bFlt = ac.createBiquadFilter();
+      bFlt.type = 'bandpass';
+      bFlt.frequency.setValueAtTime(750, now);
+      bFlt.frequency.linearRampToValueAtTime(1550, now + 0.32);
+      bFlt.frequency.exponentialRampToValueAtTime(350, now + 2.6);
+      bFlt.Q.value = 1.9;
+
+      var bGain = ac.createGain();
+      bGain.gain.setValueAtTime(0.01, now);
+      bGain.gain.linearRampToValueAtTime(0.32, now + 0.26);
+      bGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.7);
+
+      breath.connect(bFlt); bFlt.connect(bGain); bGain.connect(ac.destination);
+      breath.start(now);
+
+      // Canyon echo
+      var echo = ac.createDelay();
+      echo.delayTime.value = 0.24;
+      var echoFb = ac.createGain();
+      echoFb.gain.value = 0.38;
+      var echoFlt = ac.createBiquadFilter();
+      echoFlt.type = 'lowpass';
+      echoFlt.frequency.value = 1000;
+
+      mainGain.connect(echo);
+      echo.connect(echoFlt);
+      echoFlt.connect(echoFb);
+      echoFb.connect(echo);
+      echoFlt.connect(ac.destination);
+
+      log.textContent = '🦖 T-Rex Dinosaur Roar playing with throat formant resonances and jungle echo!';
+    }
+
+    function testBrachio() {
+      var ac = getAudio();
+      var now = ac.currentTime;
+      var bOsc = ac.createOscillator();
+      var bGain = ac.createGain();
+      bOsc.type = 'triangle';
+      bOsc.frequency.setValueAtTime(90, now);
+      bOsc.frequency.linearRampToValueAtTime(155, now + 0.7);
+      bOsc.frequency.exponentialRampToValueAtTime(65, now + 2.5);
+
+      bGain.gain.setValueAtTime(0.01, now);
+      bGain.gain.linearRampToValueAtTime(0.36, now + 0.5);
+      bGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
+
+      var bFlt = ac.createBiquadFilter();
+      bFlt.type = 'bandpass';
+      bFlt.frequency.value = 460;
+      bFlt.Q.value = 3.2;
+
+      bOsc.connect(bFlt);
+      bFlt.connect(bGain);
+      bGain.connect(ac.destination);
+      bOsc.start(now);
+      bOsc.stop(now + 2.7);
+      log.textContent = '🦕 Brachiosaurus long neck call playing!';
+    }
+  </script>
+</body>
+</html>

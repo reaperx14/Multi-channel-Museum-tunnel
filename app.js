@@ -1,5 +1,5 @@
-/* ============================================
-   CHRONOS TUNNEL — 3D/2D RESILIENT ENGINE
+﻿/* ============================================
+   CHRONOS TUNNEL â€” 3D/2D RESILIENT ENGINE
    Inspired by TeamLab Planets Tokyo
    ============================================ */
 
@@ -22,7 +22,7 @@
     {
       id: 'earth',
       title: 'A World of Fire',
-      subtitle: 'Meteors rain down from the sky. Volcanoes erupt across a boiling landscape. Our planet Earth is being born — a world of molten rock and fire.',
+      subtitle: 'Meteors rain down from the sky. Volcanoes erupt across a boiling landscape. Our planet Earth is being born â€” a world of molten rock and fire.',
       era: '4.6 Billion Years Ago',
       imgSrc: 'img/molten_earth.png',
       duration: 16000,
@@ -77,7 +77,7 @@
     {
       id: 'humans',
       title: 'The First Storytellers',
-      subtitle: 'Homo sapiens discover fire. Families gather in cave entrances, painting animals on the stone walls — the very first art and stories in human history.',
+      subtitle: 'Homo sapiens discover fire. Families gather in cave entrances, painting animals on the stone walls â€” the very first art and stories in human history.',
       era: '300,000 Years Ago',
       imgSrc: 'img/early_humans.png',
       duration: 16000,
@@ -88,7 +88,7 @@
     {
       id: 'reef',
       title: 'A World of Wonder',
-      subtitle: 'Today, coral reefs burst with thousands of colors. Sea turtles glide through sunlit waters. Our planet is alive and thriving — and it\'s ours to protect.',
+      subtitle: 'Today, coral reefs burst with thousands of colors. Sea turtles glide through sunlit waters. Our planet is alive and thriving â€” and it\'s ours to protect.',
       era: 'Present Day',
       imgSrc: 'img/coral_reef.png',
       duration: 16000,
@@ -1598,11 +1598,504 @@
     }
   }
 
-  // ---------- Bootstrap ----------
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // ============================================
+  // CHRONOS SOUND + NARRATION ENGINE v6
+  // - Natural calm TTS narration
+  // - Cinematic Volcanic Eruptions (World of Fire)
+  // - Realistic Prehistoric Dinosaur Roars (Dinosaurs)
+  // - Audible ambient per era (ducked during speech)
+  // ============================================
+
+  var _ctx      = null;
+  var _dest     = null;   // direct destination reference
+  var _ambGain  = null;   // ambient bus gain (ducked during narration)
+  var _ambNodes = [];
+  var _soundEra = null;
+  var _soundOn  = false;
+  var _lastScene = -1;
+  var _sfxTimer  = null;
+  var _eraExtraTimers = [];
+
+  // ---- Pink noise buffer (3s looping) ----
+  function _pinkBuf() {
+    var sr=_ctx.sampleRate, len=sr*3;
+    var buf=_ctx.createBuffer(1,len,sr), d=buf.getChannelData(0);
+    var b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for(var i=0;i<len;i++){
+      var w=Math.random()*2-1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+      b2=0.969*b2+w*0.153852;    b3=0.8665*b3+w*0.3104856;
+      b4=0.55*b4+w*0.5329522;    b5=-0.7616*b5-w*0.016898;
+      d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+    return buf;
   }
+
+  // ---- Ambient helpers (go through ambGain bus -> destination) ----
+  function _addNoise(freq, gain, filterType) {
+    var src=_ctx.createBufferSource(); src.buffer=_pinkBuf(); src.loop=true;
+    var f=_ctx.createBiquadFilter(); f.type=filterType||'bandpass';
+    f.frequency.value=freq; f.Q.value=0.7;
+    var g=_ctx.createGain(); g.gain.value=gain;
+    src.connect(f); f.connect(g); g.connect(_ambGain); src.start();
+    _ambNodes.push(src,f,g);
+  }
+  function _addOsc(type, freq, gain) {
+    var o=_ctx.createOscillator(), g=_ctx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=gain;
+    o.connect(g); g.connect(_ambGain); o.start(); _ambNodes.push(o,g);
+  }
+
+  // ---- Sound effect helper (direct to output) ----
+  function _sfxOsc(freq, type, gainPeak, duration, freqEnd) {
+    var o=_ctx.createOscillator(), g=_ctx.createGain();
+    var now=_ctx.currentTime;
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,now);
+    if(freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, now+duration);
+    g.gain.setValueAtTime(gainPeak,now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+duration);
+    o.connect(g); g.connect(_dest); o.start(now); o.stop(now+duration+0.05);
+  }
+  function _sfxNoise(filterFreq, gainPeak, duration, filterType) {
+    var src=_ctx.createBufferSource(); src.buffer=_pinkBuf(); src.loop=false;
+    var f=_ctx.createBiquadFilter(); f.type=filterType||'bandpass';
+    f.frequency.value=filterFreq; f.Q.value=0.5;
+    var g=_ctx.createGain(); var now=_ctx.currentTime;
+    g.gain.setValueAtTime(gainPeak,now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+duration);
+    src.connect(f); f.connect(g); g.connect(_dest); src.start(now);
+  }
+
+  // ============================================
+  // VOLCANIC ERUPTION SOUND ENGINE
+  // ============================================
+  function _triggerVolcanoEruption(intensity) {
+    if(!_ctx || _ctx.state !== 'running') return;
+    intensity = intensity || 1.0;
+    var now = _ctx.currentTime;
+
+    // 1. Concussive Sub-Bass Volcanic Blast
+    var blastOsc = _ctx.createOscillator();
+    var blastGain = _ctx.createGain();
+    blastOsc.type = 'sawtooth';
+    blastOsc.frequency.setValueAtTime(160, now);
+    blastOsc.frequency.exponentialRampToValueAtTime(24, now + 1.4);
+    blastGain.gain.setValueAtTime(0.40 * intensity, now);
+    blastGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
+
+    var blastFlt = _ctx.createBiquadFilter();
+    blastFlt.type = 'lowpass';
+    blastFlt.frequency.setValueAtTime(220, now);
+    blastFlt.frequency.exponentialRampToValueAtTime(55, now + 2.2);
+
+    blastOsc.connect(blastFlt);
+    blastFlt.connect(blastGain);
+    blastGain.connect(_dest);
+    blastOsc.start(now);
+    blastOsc.stop(now + 2.9);
+
+    // 2. High-Pressure Eruptive Gas & Lava Roar
+    var roarSrc = _ctx.createBufferSource();
+    roarSrc.buffer = _pinkBuf();
+    roarSrc.loop = false;
+    var roarGain = _ctx.createGain();
+    var roarFlt = _ctx.createBiquadFilter();
+    roarFlt.type = 'bandpass';
+    roarFlt.Q.value = 1.4;
+    roarFlt.frequency.setValueAtTime(140, now);
+    roarFlt.frequency.linearRampToValueAtTime(680, now + 0.35);
+    roarFlt.frequency.exponentialRampToValueAtTime(110, now + 3.6);
+
+    roarGain.gain.setValueAtTime(0.01, now);
+    roarGain.gain.linearRampToValueAtTime(0.45 * intensity, now + 0.22);
+    roarGain.gain.exponentialRampToValueAtTime(0.0005, now + 4.0);
+
+    roarSrc.connect(roarFlt);
+    roarFlt.connect(roarGain);
+    roarGain.connect(_dest);
+    roarSrc.start(now);
+
+    // 3. Sizzling Flying Magma & Falling Debris Crackles
+    for (var i = 0; i < 9; i++) {
+      var dTime = 0.25 + Math.random() * 2.5;
+      var timerId = setTimeout(function() {
+        if (!_ctx || _ctx.state !== 'running' || _soundEra !== 'earth') return;
+        var t = _ctx.currentTime;
+        var pSrc = _ctx.createBufferSource();
+        pSrc.buffer = _pinkBuf();
+        var pFlt = _ctx.createBiquadFilter();
+        pFlt.type = 'highpass';
+        pFlt.frequency.value = 1400 + Math.random() * 1600;
+        var pGain = _ctx.createGain();
+        pGain.gain.setValueAtTime((0.08 + Math.random() * 0.12) * intensity, t);
+        pGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        pSrc.connect(pFlt);
+        pFlt.connect(pGain);
+        pGain.connect(_dest);
+        pSrc.start(t);
+      }, dTime * 1000);
+      _eraExtraTimers.push(timerId);
+    }
+  }
+
+  // ============================================
+  // PREHISTORIC DINOSAUR ROAR ENGINE
+  // ============================================
+  function _triggerDinosaurRoar(variant) {
+    if(!_ctx || _ctx.state !== 'running') return;
+    var now = _ctx.currentTime;
+    variant = variant || 'rex';
+
+    if (variant === 'rex') {
+      // 1. Dual Harmonic Vocal Chords (Sawtooth + Pulse)
+      var osc1 = _ctx.createOscillator();
+      var osc2 = _ctx.createOscillator();
+      osc1.type = 'sawtooth';
+      osc2.type = 'sawtooth';
+
+      // Pitch contour: predatory low rumble -> violent throat bellow -> deep guttural roar
+      osc1.frequency.setValueAtTime(68, now);
+      osc1.frequency.linearRampToValueAtTime(210, now + 0.32);
+      osc1.frequency.exponentialRampToValueAtTime(145, now + 1.1);
+      osc1.frequency.exponentialRampToValueAtTime(42, now + 2.8);
+
+      // Detuned oscillator creates massive organic phasing
+      osc2.frequency.setValueAtTime(71, now);
+      osc2.frequency.linearRampToValueAtTime(216, now + 0.32);
+      osc2.frequency.exponentialRampToValueAtTime(148, now + 1.1);
+      osc2.frequency.exponentialRampToValueAtTime(44, now + 2.8);
+
+      // Rapid vocal cord fluttering (tremolo LFO)
+      var trem = _ctx.createOscillator();
+      var tremGain = _ctx.createGain();
+      trem.frequency.setValueAtTime(24, now); // 24 Hz guttural growl
+      tremGain.gain.setValueAtTime(0.35, now);
+      trem.connect(tremGain);
+
+      var preAmp = _ctx.createGain();
+      preAmp.gain.setValueAtTime(0.40, now);
+      tremGain.connect(preAmp.gain);
+      trem.start(now);
+      trem.stop(now + 2.9);
+
+      osc1.connect(preAmp);
+      osc2.connect(preAmp);
+
+      // 2. Animal Vocal Formant Filters (Simulates throat, jaw, and chest cavity)
+      var f1 = _ctx.createBiquadFilter(); // Deep chest resonance
+      f1.type = 'peaking';
+      f1.frequency.setValueAtTime(360, now);
+      f1.Q.value = 4.0;
+      f1.gain.value = 15;
+
+      var f2 = _ctx.createBiquadFilter(); // Mouth cavity resonance
+      f2.type = 'peaking';
+      f2.frequency.setValueAtTime(920, now);
+      f2.Q.value = 3.5;
+      f2.gain.value = 16;
+
+      var f3 = _ctx.createBiquadFilter(); // Snarl formant
+      f3.type = 'peaking';
+      f3.frequency.setValueAtTime(1750, now);
+      f3.Q.value = 2.5;
+      f3.gain.value = 11;
+
+      var lowpass = _ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.setValueAtTime(2800, now);
+      lowpass.frequency.exponentialRampToValueAtTime(550, now + 2.8);
+
+      preAmp.connect(f1);
+      f1.connect(f2);
+      f2.connect(f3);
+      f3.connect(lowpass);
+
+      // Main amplitude envelope
+      var mainGain = _ctx.createGain();
+      mainGain.gain.setValueAtTime(0.01, now);
+      mainGain.gain.linearRampToValueAtTime(0.46, now + 0.28);
+      mainGain.gain.setValueAtTime(0.42, now + 0.9);
+      mainGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.9);
+
+      lowpass.connect(mainGain);
+      mainGain.connect(_dest);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 2.95);
+      osc2.stop(now + 2.95);
+
+      // 3. Ferocious Breath Turbulence / Open-Mouth Air Roar
+      var breathSrc = _ctx.createBufferSource();
+      breathSrc.buffer = _pinkBuf();
+      var breathFlt = _ctx.createBiquadFilter();
+      breathFlt.type = 'bandpass';
+      breathFlt.frequency.setValueAtTime(750, now);
+      breathFlt.frequency.linearRampToValueAtTime(1550, now + 0.32);
+      breathFlt.frequency.exponentialRampToValueAtTime(350, now + 2.6);
+      breathFlt.Q.value = 1.9;
+
+      var breathGain = _ctx.createGain();
+      breathGain.gain.setValueAtTime(0.01, now);
+      breathGain.gain.linearRampToValueAtTime(0.32, now + 0.26);
+      breathGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.7);
+
+      breathSrc.connect(breathFlt);
+      breathFlt.connect(breathGain);
+      breathGain.connect(_dest);
+      breathSrc.start(now);
+
+      // 4. Prehistoric Jungle Echo Reverb
+      var echo = _ctx.createDelay();
+      echo.delayTime.value = 0.24;
+      var echoFb = _ctx.createGain();
+      echoFb.gain.value = 0.38;
+      var echoFlt = _ctx.createBiquadFilter();
+      echoFlt.type = 'lowpass';
+      echoFlt.frequency.value = 1000;
+
+      mainGain.connect(echo);
+      echo.connect(echoFlt);
+      echoFlt.connect(echoFb);
+      echoFb.connect(echo);
+      echoFlt.connect(_dest);
+
+    } else {
+      // Brachiosaurus bellowing trumpet call
+      var bOsc = _ctx.createOscillator();
+      var bGain = _ctx.createGain();
+      bOsc.type = 'triangle';
+      bOsc.frequency.setValueAtTime(90, now);
+      bOsc.frequency.linearRampToValueAtTime(155, now + 0.7);
+      bOsc.frequency.exponentialRampToValueAtTime(65, now + 2.5);
+
+      bGain.gain.setValueAtTime(0.01, now);
+      bGain.gain.linearRampToValueAtTime(0.36, now + 0.5);
+      bGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
+
+      var bFlt = _ctx.createBiquadFilter();
+      bFlt.type = 'bandpass';
+      bFlt.frequency.value = 460;
+      bFlt.Q.value = 3.2;
+
+      bOsc.connect(bFlt);
+      bFlt.connect(bGain);
+      bGain.connect(_dest);
+      bOsc.start(now);
+      bOsc.stop(now + 2.7);
+    }
+  }
+
+  // ---- Era periodic sound effects ----
+  function _playSFX(eraId) {
+    if(!_ctx||_ctx.state!=='running') return;
+    if(eraId==='bigbang') {
+      _sfxOsc(55,'sine',0.20,4,110);
+      setTimeout(function(){ _sfxOsc(880,'sine',0.07,2); },1000);
+    } else if(eraId==='earth') {
+      _triggerVolcanoEruption(1.1);
+    } else if(eraId==='ocean') {
+      _sfxNoise(350,0.22,3,'bandpass');
+      setTimeout(function(){ _sfxOsc(144,'sine',0.09,2); },500);
+    } else if(eraId==='dinosaurs') {
+      _triggerDinosaurRoar('rex');
+    } else if(eraId==='meteor') {
+      _sfxOsc(80,'sawtooth',0.32,2.5,15);
+      setTimeout(function(){ _sfxNoise(300,0.22,2,'lowpass'); },200);
+    } else if(eraId==='iceage') {
+      _sfxNoise(600,0.20,3,'bandpass');
+      [800,1600,2400].forEach(function(ms){
+        setTimeout(function(){ _sfxOsc(1400+Math.random()*800,'sine',0.11,1.2); },ms);
+      });
+    } else if(eraId==='humans') {
+      [0,350,750,1200,1900].forEach(function(ms){
+        setTimeout(function(){ _sfxNoise(1800,0.13+Math.random()*0.08,0.4,'highpass'); },ms);
+      });
+    } else if(eraId==='reef') {
+      [0,400,700,1050,1500,2100,2700].forEach(function(ms){
+        setTimeout(function(){ _sfxOsc(1500+Math.random()*1500,'sine',0.10,0.18); },ms);
+      });
+    }
+  }
+
+  // ---- Start/stop SFX timer ----
+  function _startSFXTimer(eraId) {
+    if(_sfxTimer) clearInterval(_sfxTimer);
+    _eraExtraTimers.forEach(function(id){ clearTimeout(id); });
+    _eraExtraTimers = [];
+
+    // Trigger immediate effects right when entering specific scenes
+    if (eraId === 'earth') {
+      // Immediate eruption as the world of fire appears!
+      var t1 = setTimeout(function(){ if(_soundOn) _triggerVolcanoEruption(1.2); }, 800);
+      var t2 = setTimeout(function(){ if(_soundOn) _triggerVolcanoEruption(0.85); }, 5800);
+      var t3 = setTimeout(function(){ if(_soundOn) _triggerVolcanoEruption(1.0); }, 11500);
+      _eraExtraTimers.push(t1, t2, t3);
+    } else if (eraId === 'dinosaurs') {
+      // Terrifying dinosaur roar in the background right as scene starts!
+      var d1 = setTimeout(function(){ if(_soundOn) _triggerDinosaurRoar('rex'); }, 1100);
+      var d2 = setTimeout(function(){ if(_soundOn) _triggerDinosaurRoar('brachio'); }, 6200);
+      var d3 = setTimeout(function(){ if(_soundOn) _triggerDinosaurRoar('rex'); }, 11800);
+      _eraExtraTimers.push(d1, d2, d3);
+    } else {
+      var tInit = setTimeout(function(){ if(_soundOn) _playSFX(eraId); }, 2000);
+      _eraExtraTimers.push(tInit);
+    }
+
+    _sfxTimer = setInterval(function(){
+      if(_soundOn && _soundEra) _playSFX(_soundEra);
+    }, 11000);
+  }
+
+  function _stopSFXTimer() {
+    if(_sfxTimer){ clearInterval(_sfxTimer); _sfxTimer=null; }
+    _eraExtraTimers.forEach(function(id){ clearTimeout(id); });
+    _eraExtraTimers = [];
+  }
+
+  // ---- Kill ambient nodes ----
+  function _stopAmbient() {
+    _stopSFXTimer();
+    _ambNodes.forEach(function(n){
+      try{n.stop&&n.stop(0);}catch(e){}
+      try{n.disconnect();}catch(e){}
+    });
+    _ambNodes=[]; _soundEra=null;
+  }
+
+  // ---- Era ambient sound definitions ----
+  var _ERAS = {
+    bigbang:   function(){ _addNoise(900,0.22);  _addOsc('sine',55,0.18); _addOsc('sine',220,0.09); _addOsc('sine',440,0.045); },
+    earth:     function(){
+      // Active volcanic boiling earth: low rumble + roaring gas + boiling magma
+      _addNoise(120,0.45,'lowpass');
+      _addNoise(380,0.28,'bandpass');
+      _addNoise(2200,0.08,'highpass'); // sizzling lava vents
+      _addOsc('sawtooth',36,0.16);
+      _addOsc('sine',52,0.14);
+      _addOsc('triangle',74,0.08);
+    },
+    ocean:     function(){ _addNoise(360,0.20);  _addOsc('sine',72,0.16); _addOsc('sine',144,0.08); _addOsc('sine',528,0.04); },
+    dinosaurs: function(){
+      // Prehistoric jungle atmosphere
+      _addNoise(540,0.20);
+      _addOsc('sine',44,0.18); // deep earth resonance
+      _addOsc('sine',640,0.045);
+      _addNoise(1600,0.04,'highpass'); // jungle canopy rustle
+    },
+    meteor:    function(){ _addNoise(90,0.42,'lowpass');  _addOsc('sine',28,0.28); _addOsc('sawtooth',52,0.10); },
+    iceage:    function(){ _addNoise(520,0.25);  _addOsc('triangle',55,0.16); _addOsc('sine',1200,0.03); },
+    humans:    function(){ _addNoise(950,0.18);  _addOsc('sine',90,0.16); _addOsc('triangle',175,0.10); },
+    reef:      function(){ _addNoise(580,0.18);  _addOsc('triangle',220,0.15); _addOsc('sine',440,0.08); _addOsc('sine',880,0.04); }
+  };
+
+  function _playAmbient(eraId) {
+    if(!_soundOn||!_ctx||_ctx.state!=='running') return;
+    if(_soundEra===eraId) return;
+    _stopAmbient();
+    _soundEra=eraId;
+    if(_ERAS[eraId]) _ERAS[eraId]();
+    _startSFXTimer(eraId);
+  }
+
+  // ---- Best calm voice ----
+  function _bestVoice() {
+    var vv=window.speechSynthesis.getVoices();
+    var pick=['Google UK English Female','Google UK English Male',
+              'Microsoft Aria Online (Natural) - English (United States)',
+              'Microsoft Jenny Online (Natural) - English (United States)',
+              'Google US English','Samantha','Karen'];
+    for(var i=0;i<pick.length;i++){
+      var v=vv.find(function(x){return x.name===pick[i];});
+      if(v) return v;
+    }
+    return vv.find(function(v){return v.lang==='en-GB';})||
+           vv.find(function(v){return v.lang==='en-US';})||
+           vv.find(function(v){return v.lang.startsWith('en');})||null;
+  }
+
+  // ---- Narrate with ducking ----
+  function _narrate(sceneData) {
+    if(!_soundOn||!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    var utt=new SpeechSynthesisUtterance(sceneData.title+'. '+sceneData.subtitle);
+    utt.lang='en-US'; utt.rate=0.80; utt.pitch=0.92; utt.volume=1.0;
+    var v=_bestVoice(); if(v) utt.voice=v;
+
+    // Duck ambient while speaking (volcano & dinosaur roars bypass ducking!)
+    utt.onstart=function(){
+      if(_ambGain&&_ctx) _ambGain.gain.setTargetAtTime(0.18,_ctx.currentTime,0.4);
+    };
+    function _restore(){ if(_ambGain&&_ctx) _ambGain.gain.setTargetAtTime(1.0,_ctx.currentTime,1.5); }
+    utt.onend=_restore; utt.onerror=_restore;
+
+    var wordCount=(sceneData.title+' '+sceneData.subtitle).split(' ').length;
+    var estMs=Math.ceil(wordCount/2.2)*1000;
+    setTimeout(_restore, estMs+2000);
+    window.speechSynthesis.speak(utt);
+  }
+
+  // ---- Per-frame watcher ----
+  function _tick(){
+    if(_soundOn&&_lastScene!==currentSceneIndex){
+      _lastScene=currentSceneIndex;
+      var sd=SCENES[currentSceneIndex];
+      _playAmbient(sd.id);
+      setTimeout(function(){_narrate(sd);},600);
+    }
+    requestAnimationFrame(_tick);
+  }
+
+  // ---- UI ----
+  function _createUI(){
+    var btn=document.createElement('button');
+    btn.id='chronos-snd-btn';
+    btn.innerHTML='&#128263;&nbsp;Sound &amp; Narration';
+    btn.style.cssText=[
+      'position:fixed','top:16px','right:16px','z-index:9999',
+      'background:rgba(0,0,0,0.78)','color:#ccc',
+      'border:2px solid rgba(255,255,255,0.28)','border-radius:24px',
+      'padding:10px 20px','font-size:13px','font-weight:600',
+      'font-family:sans-serif','letter-spacing:0.5px','cursor:pointer',
+      'backdrop-filter:blur(14px)','-webkit-backdrop-filter:blur(14px)',
+      'box-shadow:0 2px 18px rgba(0,0,0,0.6)','transition:all 0.25s'
+    ].join(';');
+
+    btn.addEventListener('click', async function(){
+      _soundOn=!_soundOn;
+      if(_soundOn){
+        if(!_ctx){
+          _ctx=new (window.AudioContext||window.webkitAudioContext)();
+          _dest=_ctx.destination;
+          _ambGain=_ctx.createGain(); _ambGain.gain.value=1.0;
+          _ambGain.connect(_dest);
+        }
+        if(_ctx.state==='suspended') await _ctx.resume();
+        btn.innerHTML='&#128266;&nbsp;Sound &amp; Narration';
+        btn.style.borderColor='rgba(100,255,180,0.6)';
+        btn.style.color='#b0ffcc';
+        btn.style.boxShadow='0 2px 24px rgba(0,255,120,0.25)';
+        _soundEra=null; _lastScene=-1;
+        var sd=SCENES[currentSceneIndex];
+        _playAmbient(sd.id);
+        setTimeout(function(){_narrate(sd);},500);
+      } else {
+        btn.innerHTML='&#128263;&nbsp;Sound &amp; Narration';
+        btn.style.borderColor='rgba(255,255,255,0.28)';
+        btn.style.color='#ccc';
+        btn.style.boxShadow='0 2px 18px rgba(0,0,0,0.6)';
+        _stopAmbient();
+        window.speechSynthesis&&window.speechSynthesis.cancel();
+        if(_ambGain&&_ctx) _ambGain.gain.setTargetAtTime(0,_ctx.currentTime,0.3);
+      }
+    });
+    document.body.appendChild(btn);
+    requestAnimationFrame(_tick);
+  }
+
+  // ---------- Bootstrap ----------
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){init();_createUI();});
+  } else { init(); _createUI(); }
 
 })();
